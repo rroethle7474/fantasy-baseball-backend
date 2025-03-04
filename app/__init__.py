@@ -1,6 +1,7 @@
 from flask import Flask
 from flask_cors import CORS
 from app.database.db import init_db
+from app.api.routes import NumpyEncoder
 
 def create_app():
     app = Flask(__name__, instance_relative_config=True)
@@ -8,6 +9,9 @@ def create_app():
         SECRET_KEY='dev',
         DATABASE=app.instance_path + '/fantasy_baseball.sqlite',
     )
+    
+    # Set custom JSON encoder to handle NumPy types
+    app.json_encoder = NumpyEncoder
     
     # Enable CORS for frontend
     CORS(app)
