@@ -2,6 +2,7 @@ import sqlite3
 import click
 from flask import current_app, g
 from flask.cli import with_appcontext
+import os
 
 def get_db():
     if 'db' not in g:
@@ -23,9 +24,9 @@ def init_db(app):
     with app.app_context():
         db = get_db()
         
-        # Create tables
-        with app.open_resource('app/database/schema.sql') as f:
-            db.executescript(f.read().decode('utf8'))
+    schema_path = os.path.join(os.path.dirname(__file__), 'schema.sql')
+    with open(schema_path, 'r') as f:
+        db.executescript(f.read())
 
 def init_app(app):
     app.teardown_appcontext(close_db)
