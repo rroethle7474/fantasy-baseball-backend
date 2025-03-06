@@ -1,6 +1,5 @@
 from flask import Flask
 from flask_cors import CORS
-from app.database.db import init_db
 from app.api.routes import NumpyEncoder
 
 def create_app():
@@ -16,8 +15,13 @@ def create_app():
     # Enable CORS for frontend
     CORS(app)
     
-    # Initialize database
-    init_db(app)
+    # Initialize database connection and register CLI commands
+    from app.database import db
+    db.init_app(app)
+    
+    # Register migration command
+    from app.database import migrate
+    migrate.init_app(app)
     
     # Register blueprints
     from app.api import routes
