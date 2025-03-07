@@ -535,7 +535,7 @@ def get_team_pitchers(team_id):
                 if key in pitcher_dict and pitcher_dict[key] is not None:
                     pitcher_dict[key] = float(pitcher_dict[key])
             pitchers_list.append(pitcher_dict)
-        
+        print("Pitchers List", pitchers_list)
         # Return team info and pitchers
         result = {
             'team': team_dict,
@@ -594,6 +594,7 @@ def update_team_roster(team_id):
     }
     """
     try:
+        print("Updating roster for team", team_id)
         db = get_db()
         data = request.json
         
@@ -609,7 +610,9 @@ def update_team_roster(team_id):
         player_type = data['player_type'].lower()
         position = data['position']
         player_id = data.get('player_id')  # Can be None to remove a player
-        
+        print("Player Id", player_id)
+        print("Player Type", player_type)
+        print("Position", position)
         # Validate player_type
         if player_type not in ['hitter', 'pitcher']:
             return jsonify({'error': 'player_type must be either "hitter" or "pitcher"'}), 400
@@ -672,8 +675,22 @@ def update_team_roster(team_id):
             team_hitters = db.execute('SELECT HittingTeamId FROM TeamHitters WHERE HittingTeamId = ?', (team_id,)).fetchone()
             
             if team_hitters:
-                # Update existing record
-                db.execute(f'UPDATE TeamHitters SET {position} = ? WHERE HittingTeamId = ?', (player_id, team_id))
+                # If removing a player, get the current player ID first before updating
+                if player_id is None:
+                    # Get the player currently in this position before removing
+                    previous_player = db.execute(f'SELECT {position} FROM TeamHitters WHERE HittingTeamId = ?', (team_id,)).fetchone()
+                    previous_player_id = previous_player[0] if previous_player and previous_player[0] is not None else None
+                    
+                    # Now update the TeamHitters table
+                    db.execute(f'UPDATE TeamHitters SET {position} = NULL WHERE HittingTeamId = ?', (team_id,))
+                    
+                    # If there was a player in this position, update their team reference
+                    if previous_player_id is not None:
+                        db.execute('UPDATE Hitters SET HittingTeamId = NULL WHERE HittingPlayerId = ?', (previous_player_id,))
+                else:
+                    db.execute(f'UPDATE TeamHitters SET {position} = ? WHERE HittingTeamId = ?', (player_id, team_id))
+                    # Update the player's team reference
+                    db.execute('UPDATE Hitters SET HittingTeamId = ? WHERE HittingPlayerId = ?', (team_id, player_id))
             else:
                 # Create new record with all positions set to NULL except the one being updated
                 columns = ', '.join(['HittingTeamId'] + HITTER_POSITIONS)
@@ -685,18 +702,32 @@ def update_team_roster(team_id):
                 values[position_index + 1] = player_id  # +1 because team_id is the first value
                 
                 db.execute(f'INSERT INTO TeamHitters ({columns}) VALUES ({placeholders})', values)
-            
-            # If player_id is provided, update the player's team reference
-            if player_id is not None:
-                db.execute('UPDATE Hitters SET HittingTeamId = ? WHERE HittingPlayerId = ?', (team_id, player_id))
+                
+                # If player_id is provided, update the player's team reference
+                if player_id is not None:
+                    db.execute('UPDATE Hitters SET HittingTeamId = ? WHERE HittingPlayerId = ?', (team_id, player_id))
             
         else:  # pitcher
             # Check if TeamPitchers record exists for this team
             team_pitchers = db.execute('SELECT PitchingTeamId FROM TeamPitchers WHERE PitchingTeamId = ?', (team_id,)).fetchone()
             
             if team_pitchers:
-                # Update existing record
-                db.execute(f'UPDATE TeamPitchers SET {position} = ? WHERE PitchingTeamId = ?', (player_id, team_id))
+                # If removing a player, get the current player ID first before updating
+                if player_id is None:
+                    # Get the player currently in this position before removing
+                    previous_player = db.execute(f'SELECT {position} FROM TeamPitchers WHERE PitchingTeamId = ?', (team_id,)).fetchone()
+                    previous_player_id = previous_player[0] if previous_player and previous_player[0] is not None else None
+                    
+                    # Now update the TeamPitchers table
+                    db.execute(f'UPDATE TeamPitchers SET {position} = NULL WHERE PitchingTeamId = ?', (team_id,))
+                    
+                    # If there was a player in this position, update their team reference
+                    if previous_player_id is not None:
+                        db.execute('UPDATE Pitchers SET PitchingTeamId = NULL WHERE PitchingPlayerId = ?', (previous_player_id,))
+                else:
+                    db.execute(f'UPDATE TeamPitchers SET {position} = ? WHERE PitchingTeamId = ?', (player_id, team_id))
+                    # Update the player's team reference
+                    db.execute('UPDATE Pitchers SET PitchingTeamId = ? WHERE PitchingPlayerId = ?', (team_id, player_id))
             else:
                 # Create new record with all positions set to NULL except the one being updated
                 columns = ', '.join(['PitchingTeamId'] + PITCHER_POSITIONS)
@@ -708,10 +739,10 @@ def update_team_roster(team_id):
                 values[position_index + 1] = player_id  # +1 because team_id is the first value
                 
                 db.execute(f'INSERT INTO TeamPitchers ({columns}) VALUES ({placeholders})', values)
-            
-            # If player_id is provided, update the player's team reference
-            if player_id is not None:
-                db.execute('UPDATE Pitchers SET PitchingTeamId = ? WHERE PitchingPlayerId = ?', (team_id, player_id))
+                
+                # If player_id is provided, update the player's team reference
+                if player_id is not None:
+                    db.execute('UPDATE Pitchers SET PitchingTeamId = ? WHERE PitchingPlayerId = ?', (team_id, player_id))
         
         db.commit()
         
@@ -824,7 +855,6 @@ def get_available_players():
                     if key in player_dict and player_dict[key] is not None:
                         player_dict[key] = float(player_dict[key])
                 result.append(player_dict)
-        
         return jsonify({
             'player_type': player_type,
             'position': position,
@@ -860,10 +890,22 @@ def get_team_roster_structure(team_id):
             for position in HITTER_POSITIONS:
                 player_id = team_hitters_dict.get(position)
                 if player_id:
-                    # Get player details
-                    player = db.execute('SELECT HittingPlayerId, PlayerName, Position, Status FROM Hitters WHERE HittingPlayerId = ?', (player_id,)).fetchone()
+                    # Get player details with additional stats
+                    player = db.execute('''
+                        SELECT HittingPlayerId, PlayerName, Position, Status, 
+                               HR, R, RBI, SB, AVG
+                        FROM Hitters 
+                        WHERE HittingPlayerId = ?
+                    ''', (player_id,)).fetchone()
                     if player:
-                        hitter_positions[position] = dict(player)
+                        player_dict = dict(player)
+                        # Convert numeric fields to appropriate Python types
+                        for key in ['HR', 'R', 'RBI', 'SB']:
+                            if key in player_dict and player_dict[key] is not None:
+                                player_dict[key] = int(player_dict[key])
+                        if 'AVG' in player_dict and player_dict['AVG'] is not None:
+                            player_dict['AVG'] = float(player_dict['AVG'])
+                        hitter_positions[position] = player_dict
                     else:
                         # Handle case where player ID exists in TeamHitters but not in Hitters table
                         hitter_positions[position] = {'HittingPlayerId': player_id, 'PlayerName': 'Unknown Player', 'Position': 'Unknown', 'Status': 'Unknown'}
@@ -883,10 +925,23 @@ def get_team_roster_structure(team_id):
             for position in PITCHER_POSITIONS:
                 player_id = team_pitchers_dict.get(position)
                 if player_id:
-                    # Get player details
-                    player = db.execute('SELECT PitchingPlayerId, PlayerName, Position, Status FROM Pitchers WHERE PitchingPlayerId = ?', (player_id,)).fetchone()
+                    # Get player details with additional stats
+                    player = db.execute('''
+                        SELECT PitchingPlayerId, PlayerName, Position, Status,
+                               W, SO, ERA, WHIP, SVH
+                        FROM Pitchers 
+                        WHERE PitchingPlayerId = ?
+                    ''', (player_id,)).fetchone()
                     if player:
-                        pitcher_positions[position] = dict(player)
+                        player_dict = dict(player)
+                        # Convert numeric fields to appropriate Python types
+                        for key in ['W', 'SO', 'SVH']:
+                            if key in player_dict and player_dict[key] is not None:
+                                player_dict[key] = int(player_dict[key])
+                        for key in ['ERA', 'WHIP']:
+                            if key in player_dict and player_dict[key] is not None:
+                                player_dict[key] = float(player_dict[key])
+                        pitcher_positions[position] = player_dict
                     else:
                         # Handle case where player ID exists in TeamPitchers but not in Pitchers table
                         pitcher_positions[position] = {'PitchingPlayerId': player_id, 'PlayerName': 'Unknown Player', 'Position': 'Unknown', 'Status': 'Unknown'}
